@@ -1,0 +1,17 @@
+2
+m n
+x y
+acq(1, m)
+wr(1, x)
+rel(1, m)
+acq(0, m)
+wr(0, x)
+rel(0, m)
+acq(0, n)
+rd(0, y)
+wr(0, y)
+rel(0, n)
+acq(1, n)
+rd(1, y)
+wr(1, y)
+rel(1, n)

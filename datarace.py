@@ -5,6 +5,7 @@ import numpy as np
 from itertools import chain
 from prettytable import PrettyTable
 import copy
+import sys
 
 
 class CommandType(Enum):
@@ -46,7 +47,7 @@ class VectorClock:
         np.maximum(self.vector, other.vector, self.vector)
 
     def update(self, index: int, value: int):
-        self.vector[index] = value  #
+        self.vector[index] = value
 
     def get(self, index: int) -> int:
         return self.vector[index]
@@ -57,10 +58,10 @@ class VectorClock:
         return new
 
     def __le__(self, other: "VectorClock") -> bool:
-        return (self.vector < other.vector).all()
+        return (self.vector <= other.vector).all()
 
     def __ge__(self, other: "VectorClock") -> bool:
-        return (self.vector > other.vector).all()
+        return (self.vector >= other.vector).all()
 
     def __str__(self) -> str:
         return "(" + ", ".join(map(str, self.vector)) + ")"
@@ -89,22 +90,32 @@ class Program:
             self.c[command.thread].union(self.l[command.id])
 
         elif command.type == CommandType.rd:
-            if self.w[command.id] <= self.c[command.thread]:
-                raise DataRaceException(f"Write-read data race detected at: {command}")
-            self.r[command.id][command.thread] = self.c[command.thread][command.thread]
+            if not self.w[command.id] <= self.c[command.thread]:
+                raise DataRaceException(
+                    f"Write-read data race detected at: {command}\n{self.w[command.id]} !<= {self.c[command.thread]}"
+                )
+            self.r[command.id].update(
+                command.thread, self.c[command.thread].get(command.thread)
+            )
 
         elif command.type == CommandType.wr:
-            if self.w[command.id] <= self.c[command.thread]:
-                raise DataRaceException(f"Write-write data race detected at: {command}")
-            if self.r[command.id] <= self.c[command.thread]:
-                raise DataRaceException(f"Read-write data race detected at: {command}")
+            if not self.w[command.id] <= self.c[command.thread]:
+                raise DataRaceException(
+                    f"Write-write data race detected at: {command}\n{self.w[command.id]} !<= {self.c[command.thread]}"
+                )
+            if not self.r[command.id] <= self.c[command.thread]:
+                raise DataRaceException(
+                    f"Read-write data race detected at: {command}\n{self.r[command.id]} !<= {self.c[command.thread]}"
+                )
             self.w[command.id].update(
                 command.thread, self.c[command.thread].get(command.thread)
             )
 
         elif command.type == CommandType.rel:
-            self.l[command.id] = np.copy(self.c[command.thread])
-            self.c[command.thread][command.thread] += 1
+            self.l[command.id] = copy.copy(self.c[command.thread])
+            self.c[command.thread].update(
+                command.thread, self.c[command.thread].get(command.thread) + 1
+            )
 
         else:
             raise ValueError("Invalid command")
@@ -126,8 +137,26 @@ class Program:
         print(self.table)
 
 
+def main():
+    if len(sys.argv) < 2:
+        print("Please provide a file!")
+        sys.exit(-1)
+
+    with open(sys.argv[1], "r") as f:
+        no_threads = int(f.readline())
+        locks = f.readline().split()
+        ids = f.readline().split()
+
+        program = Program(no_threads, locks, ids)
+        try:
+            for line in f:
+                command = Command(line.strip())
+                program.execute_command(command)
+        except DataRaceException as e:
+            print(e)
+        finally:
+            program.print_table()
+
+
 if __name__ == "__main__":
-    program = Program(2, ["m", "n"], ["x", "y"])
-    program.execute_command(Command("acq(1, m)"))
-    program.execute_command(Command("wr (1, x)"))
-    program.print_table()
+    main()
